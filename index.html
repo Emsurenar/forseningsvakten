@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0e0f11" media="(prefers-color-scheme: dark)" />
+  <title>Förseningsvakten</title>
+  <meta name="description" content="Få en notis när du har rätt till en ersatt taxiresa vid SL-förseningar." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Vakten" />
+  <meta property="og:title" content="Förseningsvakten" />
+  <meta property="og:description" content="Få en notis när du har rätt till en ersatt taxiresa vid SL-förseningar." />
+  <meta property="og:type" content="website" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-180.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ================= ONBOARDING ================= -->
+  <div id="onboarding" class="onboarding" hidden>
+    <div class="ob-shell">
+      <div class="ob-progress"><span data-step="0" class="on"></span><span data-step="1"></span><span data-step="2"></span></div>
+
+      <!-- Step 1: hemhållplats -->
+      <section class="ob-step" data-step="0">
+        <div class="ob-mark" aria-hidden="true"></div>
+        <h1>Var bor du?</h1>
+        <p class="muted">Vi bevakar avgångar från din hemhållplats. Baserat på Östermalm har vi föreslagit en.</p>
+        <div class="field">
+          <label for="ob-home">Hemhållplats</label>
+          <div class="combo">
+            <input id="ob-home" type="text" autocomplete="off" placeholder="Sök hållplats…" />
+            <ul id="ob-home-results" class="results" hidden></ul>
+          </div>
+          <p id="ob-home-picked" class="picked" hidden></p>
+        </div>
+        <button class="btn primary block" data-next disabled>Fortsätt</button>
+      </section>
+
+      <!-- Step 2: destinationer -->
+      <section class="ob-step" data-step="1" hidden>
+        <h1>Vart åker du?</h1>
+        <p class="muted">Välj områden du bryr dig om. Du får en notis när en ersatt taxi dit blir möjlig.</p>
+        <div class="field">
+          <div class="combo">
+            <input id="ob-dest" type="text" autocomplete="off" placeholder="Lägg till destination…" />
+            <ul id="ob-dest-results" class="results" hidden></ul>
+          </div>
+        </div>
+        <div id="ob-dest-list" class="chips"></div>
+        <div class="ob-suggest">
+          <span class="muted tiny">Förslag</span>
+          <div id="ob-dest-suggest" class="chips"></div>
+        </div>
+        <div class="ob-actions">
+          <button class="btn ghost" data-back>Tillbaka</button>
+          <button class="btn primary" data-next disabled>Fortsätt</button>
+        </div>
+      </section>
+
+      <!-- Step 3: tider + notiser -->
+      <section class="ob-step" data-step="2" hidden>
+        <h1>När vill du veta?</h1>
+        <p class="muted">Vi larmar bara under dina aktiva tider – inget brus mitt i natten.</p>
+        <div class="field row2">
+          <div>
+            <label for="ob-from">Från</label>
+            <input id="ob-from" type="time" value="07:00" />
+          </div>
+          <div>
+            <label for="ob-to">Till</label>
+            <input id="ob-to" type="time" value="23:00" />
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="ob-notify" checked />
+          <span class="track" aria-hidden="true"></span>
+          <span>Skicka push-notiser</span>
+        </label>
+        <p class="muted tiny">Allt sparas lokalt på din enhet. Inga konton, ingen server.</p>
+        <div class="ob-actions">
+          <button class="btn ghost" data-back>Tillbaka</button>
+          <button class="btn primary" id="ob-finish">Klar</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ================= APP ================= -->
+  <div id="app" hidden>
+    <!-- HEM -->
+    <main class="view" data-view="home">
+      <header class="topbar">
+        <div class="brand">
+          <span id="brand-dot" class="dot"></span>
+          <span class="brand-name">Förseningsvakten</span>
+        </div>
+        <button id="refresh" class="icon-btn" title="Uppdatera" aria-label="Uppdatera">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+      </header>
+
+      <div class="home-meta">
+        <div>
+          <div class="home-from muted tiny">Hemifrån</div>
+          <div id="home-stop" class="home-stop">—</div>
+        </div>
+        <div class="updated muted tiny"><span id="updated">—</span> · nästa om <span id="countdown">–</span>s</div>
+      </div>
+
+      <div id="net-banner" class="banner" hidden>
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <span>Kunde inte uppdatera — försöker igen strax.</span>
+      </div>
+
+      <!-- Hero: berättigad eller lugnt -->
+      <section id="hero" class="hero calm">
+        <div id="hero-body"></div>
+      </section>
+
+      <h2 class="section-title">Dina destinationer</h2>
+      <ul id="dest-cards" class="dest-cards"></ul>
+      <button id="add-dest" class="btn ghost block add-more">+ Lägg till destination</button>
+    </main>
+
+    <!-- ERSÄTTNINGAR -->
+    <main class="view" data-view="wallet" hidden>
+      <header class="topbar"><div class="brand"><span class="brand-name">Ersättningar</span></div></header>
+      <div id="wallet-summary" class="wallet-summary"></div>
+      <ul id="claims" class="claims"></ul>
+      <div id="claims-empty" class="empty" hidden>
+        <p>Inga sparade ärenden än.</p>
+        <p class="muted tiny">När du tar en ersatt taxi sparar du beviset här och håller koll på 3-månadersgränsen.</p>
+      </div>
+    </main>
+
+    <!-- INSTÄLLNINGAR -->
+    <main class="view" data-view="settings" hidden>
+      <header class="topbar"><div class="brand"><span class="brand-name">Inställningar</span></div></header>
+
+      <div class="setting-group">
+        <div class="setting-label">Hemhållplats</div>
+        <div class="combo">
+          <input id="set-home" type="text" autocomplete="off" placeholder="Sök hållplats…" />
+          <ul id="set-home-results" class="results" hidden></ul>
+        </div>
+        <div id="set-home-current" class="muted tiny"></div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label">Gräns för berättigad försening</div>
+        <div class="slider-row">
+          <input id="set-threshold" type="range" min="20" max="40" step="1" value="20" />
+          <span id="set-threshold-val" class="pill">20 min</span>
+        </div>
+        <p class="muted tiny">Lagen ger rätt vid mer än 20 min. Höj för större marginal.</p>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label">Aktiva tider</div>
+        <div class="field row2 bare">
+          <div><label for="set-from">Från</label><input id="set-from" type="time" /></div>
+          <div><label for="set-to">Till</label><input id="set-to" type="time" /></div>
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <label class="toggle">
+          <input type="checkbox" id="set-notify" />
+          <span class="track" aria-hidden="true"></span>
+          <span>Push-notiser</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="set-worthwhile" />
+          <span class="track" aria-hidden="true"></span>
+          <span>Larma bara när taxin täcks helt (≤ <span id="cap-label">1 480</span> kr)</span>
+        </label>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label">Utseende</div>
+        <div class="seg" id="theme-seg" role="group" aria-label="Tema">
+          <button data-theme="system" class="on">System</button>
+          <button data-theme="light">Ljust</button>
+          <button data-theme="dark">Mörkt</button>
+        </div>
+      </div>
+
+      <button id="reset" class="btn danger-ghost block">Nollställ appen</button>
+      <p class="muted tiny center legal">Förseningsvakten är ett fristående verktyg och drivs inte av SL. Ersättning betalas ut av SL enligt deras villkor. Du måste ha giltig biljett och faktiskt genomföra resan.</p>
+    </main>
+
+    <!-- TABBAR -->
+    <nav class="tabbar">
+      <button data-goto="home" class="on">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+        <span>Hem</span>
+      </button>
+      <button data-goto="wallet">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>
+        <span>Ersättningar</span>
+      </button>
+      <button data-goto="settings">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Inställningar</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ================= CLAIM SHEET ================= -->
+  <div id="sheet" class="sheet-wrap" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" tabindex="-1">
+      <div class="sheet-handle"></div>
+      <div id="sheet-content"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
