@@ -227,6 +227,16 @@ function renderHome() {
   renderHero();
 }
 
+// Tidigast anländande resan som ännu inte avgått, vald mot AKTUELL tid (inte polltid).
+// Pollen cachar flera resor; mellan pollarna väljs nästa framtida ur cachen, så en redan
+// avgången "nästa" resa aldrig visas.
+function nextJourney(res) {
+  if (!res || !res.journeys || !res.journeys.length) return null;
+  const now = Date.now();
+  const future = res.journeys.filter((j) => j.depEstMs == null || j.depEstMs >= now);
+  return future[0] || null; // res.journeys är redan sorterad på tidigast ankomst
+}
+
 function statusMeta(res) {
   if (!res || res.status === "unknown") return { cls: "ok", label: "–", meta: "Ingen data" };
   if (res.status === "eligible") return { cls: "elig", label: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11h.5a1.5 1.5 0 0 1 1.5 1.5V17a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-4.5A1.5 1.5 0 0 1 4.5 11H5zm2.2-.5h9.6l-1-3a.5.5 0 0 0-.5-.4H8.7a.5.5 0 0 0-.5.4l-1 3zM6.5 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm11 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/></svg>`, meta: `Berättigad · +${res.deltaMin} min` };
@@ -240,6 +250,7 @@ function renderDestCards() {
     ul.innerHTML = `<li class="empty" style="padding:30px 10px">Inga destinationer än.<br><span class="muted tiny">Lägg till en nedan så börjar vi bevaka.</span></li>`;
     return;
   }
+  let needsPoll = false;
   ul.innerHTML = state.dests.map((d) => {
     const res = results.get(d.id);
     if (!res) {
@@ -250,9 +261,15 @@ function renderDestCards() {
     }
     const m = statusMeta(res);
     const elig = res.status === "eligible" ? "is-eligible" : "";
+    const nj = nextJourney(res);
+    // be om färsk data när pollens bästa resa avgått för länge sedan (eller allt cachat gått)
+    const best = res.journeys?.[0];
+    const bestGone = best && best.depEstMs != null && best.depEstMs < Date.now() - 20000;
+    if (res.status !== "unknown" && res.journeys?.length && (!nj || bestGone)) needsPoll = true;
     const statusText = res.status === "eligible"
       ? `Taxi ~${kr(res.taxi.fare)} · ersätts av SL`
-      : `${m.meta}${res.arrEstMs ? " · framme " + fmtClock(res.arrEstMs) : ""}`;
+      : nj ? `${m.meta} · framme ${fmtClock(nj.arrEstMs)}`
+           : m.meta;
     return `<li class="dcard ${elig}" data-id="${esc(d.id)}">
       <div class="stat ${m.cls}">${m.label}</div>
       <div class="body">
@@ -284,6 +301,7 @@ function renderDestCards() {
       save(); renderDestCards(); renderHero();
     }});
   });
+  if (needsPoll && !polling) poll();
 }
 
 function renderHero() {
@@ -355,11 +373,16 @@ async function poll(force = false) {
   polling = false;
 }
 function startCountdown() {
+  let tick = 0;
   setInterval(() => {
-    if (!polling && nextPollAt && Date.now() >= nextPollAt) poll();
+    if (polling) return;
+    if (nextPollAt && Date.now() >= nextPollAt) { poll(); return; }
+    if (++tick % 10 === 0) renderDestCards(); // välj om "nästa resa" mot klockan var 10:e sek
   }, 1000);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && Date.now() - lastPollAt > 60000) poll();
+    if (document.hidden) return;
+    renderDestCards(); // välj om nästa resa direkt vid återkomst till appen
+    if (Date.now() - lastPollAt > 45000) poll();
   });
   window.addEventListener("online", () => poll(true));
   window.addEventListener("offline", () => { $("#net-banner").hidden = false; });
@@ -420,7 +443,8 @@ $("#sheet [data-close]").onclick = closeSheet;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#sheet").hidden) closeSheet(); });
 
 function openStatusSheet(d, res) {
-  const legs = res?.legs;
+  const nj = nextJourney(res);
+  const legs = (nj && nj.legs) || res?.legs;
   const hasData = res && res.status !== "unknown" && legs && legs.length;
   let sub = "Ingen realtidsdata just nu — försök igen om en stund.";
   let chip = "";
