@@ -28,6 +28,45 @@ export async function stopFinder(q, signal) {
     }));
 }
 
+// --- Närmaste hållplatser via geolocation ---
+const SITES_URL = "https://transport.integration.sl.se/v1/sites?expand=true";
+let _sites = null;
+// gid = "9091001000" + id: konstrueras från det lilla id-fältet eftersom det riktiga
+// gid:et (9091001000001087) är > Number.MAX_SAFE_INTEGER och tappar precision i JSON.parse.
+const gidFromId = (id) => "9091001000" + String(id).padStart(6, "0");
+async function loadSites(signal) {
+  if (_sites) return _sites;
+  try {
+    const c = JSON.parse(localStorage.getItem("fv:sites2") || "null");
+    if (c && c.t && Date.now() - c.t < 30 * 24 * 3600e3 && Array.isArray(c.d) && c.d.length) return (_sites = c.d);
+  } catch {}
+  const data = await getJSON(SITES_URL, signal);
+  _sites = (Array.isArray(data) ? data : [])
+    .filter((s) => s.id != null && s.lat && s.lon && s.name)
+    .map((s) => ({ id: gidFromId(s.id), name: s.name, lat: s.lat, lon: s.lon }));
+  try { localStorage.setItem("fv:sites2", JSON.stringify({ t: Date.now(), d: _sites })); } catch {}
+  return _sites;
+}
+
+export async function nearbyStops(lat, lon, n = 6, signal) {
+  const sites = await loadSites(signal);
+  const R = 6371000, rad = (x) => (x * Math.PI) / 180;
+  const distM = (s) => {
+    const dLat = rad(s.lat - lat), dLon = rad(s.lon - lon);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat)) * Math.cos(rad(s.lat)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  };
+  return sites
+    .map((s) => ({ s, d: distM(s) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, n)
+    .map(({ s, d }) => ({
+      id: s.id, name: s.name, full: s.name,
+      locality: d < 1000 ? `${Math.round(d / 10) * 10} m bort` : `${(d / 1000).toFixed(1)} km bort`,
+      coord: { lat: s.lat, lon: s.lon },
+    }));
+}
+
 // SL:s officiella linjefärger — det som får appen att kännas "på riktigt" för en stockholmare
 export function lineColor({ mode, designation } = {}) {
   const d = parseInt(designation, 10);
@@ -92,6 +131,27 @@ export async function trips(originId, destId, n = 3, signal) {
         (l.destination?.arrivalTimeEstimated && l.destination.arrivalTimeEstimated !== l.destination.arrivalTimePlanned) ||
         (Array.isArray(l.realtimeStatus) && l.realtimeStatus.includes("MONITORED"))
       );
+      // hela resan, ben för ben (för detaljvyn)
+      const cleanStop = (s) => (s || "").replace(/,\s*[^,]*$/, "").trim() || (s || "");
+      const legDetails = legs.map((l) => {
+        const t = l.transportation || {};
+        const walk = !isTransitLeg(l);
+        const mode = walk ? "WALK" : modeForProductName(t.product?.name);
+        return {
+          walk,
+          designation: walk ? null : t.disassembledName,
+          color: walk ? null : lineColor({ mode, designation: t.disassembledName }),
+          productName: t.product?.name || "",
+          towards: t.destination?.name || "",
+          fromName: cleanStop(l.origin?.name),
+          toName: cleanStop(l.destination?.name),
+          depMs: ms(l.origin?.departureTimeEstimated) ?? ms(l.origin?.departureTimePlanned),
+          arrMs: ms(l.destination?.arrivalTimeEstimated) ?? ms(l.destination?.arrivalTimePlanned),
+          depPlannedMs: ms(l.origin?.departureTimePlanned),
+          arrPlannedMs: ms(l.destination?.arrivalTimePlanned),
+          durationSec: l.duration ?? null,
+        };
+      });
       const depP = ms(first.departureTimePlanned);
       const depE = ms(first.departureTimeEstimated) ?? depP;
       const arrP = ms(last.arrivalTimePlanned);
@@ -102,7 +162,7 @@ export async function trips(originId, destId, n = 3, signal) {
         durationPlannedSec: j.tripDuration ?? null,
         durationRtSec: j.tripRtDuration ?? j.tripDuration ?? null,
         interchanges: j.interchanges ?? 0,
-        lines, monitored,
+        lines, monitored, legs: legDetails,
       };
     })
     .filter(Boolean)

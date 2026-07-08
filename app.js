@@ -1,5 +1,5 @@
 // ============ Förseningsvakten — app ============
-import { stopFinder } from "./sl.js";
+import { stopFinder, nearbyStops } from "./sl.js";
 import { evaluate, estimateTaxi, CAP_2026 } from "./engine.js";
 
 /* ---------- DOM helpers ---------- */
@@ -14,6 +14,28 @@ function badges(lineObjs = [], big = false) {
   const chips = lineObjs.slice(0, 4).map((l) =>
     `<span class="line-badge${big ? " lg" : ""}" style="background:${l.color || "#5a6472"}" role="img" aria-label="Linje ${esc(l.designation)}" title="Linje ${esc(l.designation)}">${esc(l.designation)}</span>`).join("");
   return `<span class="line-badges">${chips}</span>`;
+}
+// Hela resan som en tidslinje, ben för ben
+function journeyHTML(legs) {
+  if (!legs || !legs.length) return "";
+  const isLate = (est, planned) => planned && est && est - planned >= 90000;
+  const time = (est, planned) => `<span class="jtime${isLate(est, planned) ? " late" : ""}">${fmtClock(est)}</span>`;
+  const durMin = (s) => (s ? Math.max(1, Math.round(s / 60)) : null);
+  let h = '<div class="journey">';
+  legs.forEach((leg) => {
+    const c = leg.walk ? "var(--faint)" : (leg.color || "#5a6472");
+    h += `<div class="jstop">${time(leg.depMs, leg.depPlannedMs)}<span class="jdot" style="background:${c}"></span><span class="jname">${esc(leg.fromName)}</span></div>`;
+    const d = durMin(leg.durationSec);
+    h += `<div class="jconn"><span></span><span class="jrail" style="background:${c}"></span><span class="jinfo">${
+      leg.walk
+        ? `<span class="jwalk">Gå${d ? " " + d + " min" : ""}</span>`
+        : `${badges([{ designation: leg.designation, color: leg.color }])}<span class="jtowards">mot ${esc(leg.towards || "—")}${d ? " · " + d + " min" : ""}</span>`
+    }</span></div>`;
+  });
+  const last = legs[legs.length - 1];
+  const lc = last.walk ? "var(--faint)" : (last.color || "#5a6472");
+  h += `<div class="jstop">${time(last.arrMs, last.arrPlannedMs)}<span class="jdot" style="background:${lc}"></span><span class="jname strong">${esc(last.toName)}</span></div>`;
+  return h + "</div>";
 }
 function toast(msg, action) {
   const t = $("#toast"); t.innerHTML = "";
@@ -89,7 +111,26 @@ function attachSearch(input, list, onPick) {
     e.preventDefault(); pick(items[+li.dataset.i]);
   });
   function pick(s) { input.value = ""; items = []; close(); onPick(s); }
-  return { close };
+  return { close, showItems: (arr) => { items = arr; active = -1; render(); } };
+}
+
+// Hämta position och visa närmaste hållplatser i träfflistan
+function useMyLocation(combo, btn) {
+  if (!navigator.geolocation) return toast("Platstjänst stöds inte i din webbläsare");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Hämtar plats…";
+  const done = () => { btn.disabled = false; btn.textContent = label; };
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    try {
+      const near = await nearbyStops(pos.coords.latitude, pos.coords.longitude, 6);
+      if (!near.length) toast("Hittade inga hållplatser nära dig");
+      else { combo.showItems(near); toast("Närmaste hållplatser — välj din"); }
+    } catch { toast("Kunde inte hämta hållplatser"); }
+    finally { done(); }
+  }, (err) => {
+    done();
+    toast(err.code === 1 ? "Platsåtkomst nekad — tillåt i webbläsaren" : "Kunde inte hämta din plats");
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
 }
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
@@ -100,12 +141,13 @@ const SUGGEST = ["T-Centralen", "Odenplan", "Slussen", "Stockholm City", "Fridhe
 async function startOnboarding() {
   $("#onboarding").hidden = false; $("#app").hidden = true;
   showStep(0);
-  attachSearch($("#ob-home"), $("#ob-home-results"), (s) => {
+  const homeCombo = attachSearch($("#ob-home"), $("#ob-home-results"), (s) => {
     ob.home = s;
     $("#ob-home-picked").hidden = false;
     $("#ob-home-picked").textContent = `${s.name}${s.locality ? " · " + s.locality : ""}`;
     $('.ob-step[data-step="0"] [data-next]').disabled = false;
   });
+  $("#ob-loc").onclick = () => useMyLocation(homeCombo, $("#ob-loc"));
   attachSearch($("#ob-dest"), $("#ob-dest-results"), (s) => addObDest(s));
   renderSuggest();
   // Personligt: föreslå hemhållplats baserat på Östermalm
@@ -167,7 +209,8 @@ function wireOnboarding() {
 function bootApp() {
   applyTheme();
   bindSettings();
-  attachSearch($("#set-home"), $("#set-home-results"), (s) => { state.home = s; save(); renderHome(); poll(true); });
+  const setHomeCombo = attachSearch($("#set-home"), $("#set-home-results"), (s) => { state.home = s; save(); renderHome(); renderSettings(); poll(true); });
+  $("#set-loc").onclick = () => useMyLocation(setHomeCombo, $("#set-loc"));
   renderHome(); renderSettings(); renderWallet();
   poll(true);
   startCountdown();
@@ -181,7 +224,7 @@ function renderHome() {
 
 function statusMeta(res) {
   if (!res || res.status === "unknown") return { cls: "ok", label: "–", meta: "Ingen data" };
-  if (res.status === "eligible") return { cls: "elig", label: "✓", meta: `Berättigad · +${res.deltaMin} min` };
+  if (res.status === "eligible") return { cls: "elig", label: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11h.5a1.5 1.5 0 0 1 1.5 1.5V17a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-4.5A1.5 1.5 0 0 1 4.5 11H5zm2.2-.5h9.6l-1-3a.5.5 0 0 0-.5-.4H8.7a.5.5 0 0 0-.5.4l-1 3zM6.5 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm11 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/></svg>`, meta: `Berättigad · +${res.deltaMin} min` };
   if (res.status === "delayed") return { cls: "delay", label: `+${res.deltaMin}`, meta: `Försenad · ~${res.deltaMin} min` };
   return { cls: "ok", label: "✓", meta: "I tid" };
 }
@@ -220,8 +263,7 @@ function renderDestCards() {
     if (e.target.closest("[data-remove]")) return;
     const res = results.get(c.dataset.id);
     const d = state.dests.find((x) => x.id === c.dataset.id);
-    if (res?.status === "eligible") openClaimSheet(d, res);
-    else openStatusSheet(d, res);
+    openStatusSheet(d, res); // visar hela resan; berättigade får taxi-knapp i arket
   });
   $$("#dest-cards [data-remove]").forEach((b) => b.onclick = (e) => {
     e.stopPropagation();
@@ -259,7 +301,7 @@ function renderHero() {
         <div><span class="k">Din kostnad</span><span class="v">${res.taxi.covered ? "0 kr" : kr(res.taxi.fare - res.taxi.cap)}</span></div>
       </div>
       <div class="hero-actions">
-        <button class="btn primary" data-book>Beställ taxi</button>
+        <button class="btn primary" data-book>Visa resväg</button>
         <button class="btn ghost" data-claim>Spara bevis</button>
       </div>
       ${eligible.length > 1 ? `<div class="hero-more">+${eligible.length - 1} till berättigad just nu</div>` : ""}`;
@@ -269,14 +311,15 @@ function renderHero() {
     const anyDelay = state.dests.some((d) => results.get(d.id)?.status === "delayed");
     hero.className = "hero calm";
     dot.className = anyDelay ? "dot warn" : "dot";
+    const icon = anyDelay
+      ? `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
     body.innerHTML = `
       <div class="calm-line">
-        <div class="calm-check">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-        </div>
+        <div class="calm-check ${anyDelay ? "warn" : ""}">${icon}</div>
         <div>
           <div class="t">${anyDelay ? "Vissa förseningar" : "Allt rullar på"}</div>
-          <div class="s">${anyDelay ? "Ännu inte över 20 min — vi bevakar." : "Ingen ersättningsbar försening just nu."}</div>
+          <div class="s">${anyDelay ? `Ännu inte över ${state.settings.threshold} min — vi bevakar.` : "Ingen ersättningsbar försening just nu."}</div>
         </div>
       </div>`;
   }
@@ -308,10 +351,7 @@ async function poll(force = false) {
 }
 function startCountdown() {
   setInterval(() => {
-    if (polling) { $("#countdown").textContent = "…"; return; }
-    const left = Math.max(0, Math.ceil((nextPollAt - Date.now()) / 1000));
-    $("#countdown").textContent = left;
-    if (left <= 0) poll();
+    if (!polling && nextPollAt && Date.now() >= nextPollAt) poll();
   }, 1000);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && Date.now() - lastPollAt > 60000) poll();
@@ -375,21 +415,33 @@ $("#sheet [data-close]").onclick = closeSheet;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#sheet").hidden) closeSheet(); });
 
 function openStatusSheet(d, res) {
-  const arr = res?.arrEstMs ? fmtClock(res.arrEstMs) : "–";
-  const line = res?.lines?.[0] || "SL";
-  const hasData = res && res.status !== "unknown";
+  const legs = res?.legs;
+  const hasData = res && res.status !== "unknown" && legs && legs.length;
+  let sub = "Ingen realtidsdata just nu — försök igen om en stund.";
+  let chip = "";
+  if (hasData) {
+    const transit = legs.filter((l) => !l.walk);
+    const byten = Math.max(0, transit.length - 1);
+    const depMs = legs[0].depMs, arrMs = legs[legs.length - 1].arrMs;
+    const durMin = depMs && arrMs ? Math.round((arrMs - depMs) / 60000) : null;
+    sub = `Avgår ${fmtClock(depMs)}${durMin ? " · " + durMin + " min" : ""}${byten ? ` · ${byten} byte${byten > 1 ? "n" : ""}` : " · direkt"}`;
+    const cls = res.status === "eligible" ? "elig" : res.status === "delayed" ? "delay" : "ok";
+    const txt = res.status === "eligible" ? `Berättigad · +${res.deltaMin} min` : res.status === "delayed" ? `+${res.deltaMin} min` : "I tid";
+    chip = `<span class="jstatus ${cls}">${txt}</span>`;
+  }
   openSheet(`
     <div class="sheet-handle"></div>
-    <h3>${esc(d.name)}</h3>
-    <div class="sheet-sub">${hasData ? (res.status === "delayed" ? "Försenad, men inte berättigad ännu." : "Trafiken rullar på.") : "Ingen realtidsdata just nu."}</div>
-    <div class="evidence">
-      <div class="row"><span class="k">Status</span><span class="v">${hasData ? (res.status === "delayed" ? `+${res.deltaMin} min` : "I tid") : "–"}</span></div>
-      <div class="row"><span class="k">Beräknad framme</span><span class="v">${arr}</span></div>
-      <div class="row"><span class="k">Linje</span><span class="v">${badges(res?.lineObjs) || esc(line)}</span></div>
-      <div class="row"><span class="k">Gräns för taxi</span><span class="v">över ${state.settings.threshold} min</span></div>
-    </div>
-    <div class="sheet-actions"><button class="btn ghost" data-close2>Stäng</button></div>`);
+    <div class="jhead"><h3>${esc(d.name)}</h3>${chip}</div>
+    <div class="sheet-sub">${sub}</div>
+    ${journeyHTML(legs)}
+    ${hasData && res.status !== "eligible" ? `<div class="sheet-hint"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11h.5a1.5 1.5 0 0 1 1.5 1.5V17a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-4.5A1.5 1.5 0 0 1 4.5 11H5zm2.2-.5h9.6l-1-3a.5.5 0 0 0-.5-.4H8.7a.5.5 0 0 0-.5.4l-1 3zM6.5 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm11 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/></svg><span>Rätt till en ersatt taxi om resan blir över ${state.settings.threshold} min försenad.</span></div>` : ""}
+    <div class="sheet-actions">
+      ${res?.status === "eligible" ? `<button class="btn primary" data-claim2>Ta taxi &amp; spara bevis</button>` : ""}
+      <button class="btn ghost" data-close2>Stäng</button>
+    </div>`);
   $("#sheet [data-close2]").onclick = closeSheet;
+  const claimBtn = $("#sheet [data-claim2]");
+  if (claimBtn) claimBtn.onclick = () => openClaimSheet(d, res);
 }
 
 function openClaimSheet(d, res) {
@@ -412,7 +464,7 @@ function openClaimSheet(d, res) {
     <div class="sheet-actions">
       <button class="btn primary" data-save ${already ? "disabled" : ""}>${already ? "Redan sparat i plånboken" : "Spara i plånboken"}</button>
       <button class="btn ghost" data-sl>Öppna SL:s ansökan</button>
-      <button class="btn ghost" data-book2>Beställ taxi</button>
+      <button class="btn ghost" data-book2>Visa resväg</button>
     </div>`);
   $("#sheet [data-save]").onclick = () => { saveClaim(d, res); closeSheet(); goto("wallet"); toast("Sparat i plånboken"); };
   $("#sheet [data-sl]").onclick = () => window.open("https://sl.se/kundservice/forseningsersattning", "_blank", "noopener");
@@ -453,7 +505,7 @@ function renderWallet() {
         <div><div class="route">${badges(c.lineObjs)}${esc(c.destName)}</div><div class="when">${new Date(c.createdAt).toLocaleDateString("sv-SE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · +${c.delayMin} min · ${kr(c.taxi?.fare)}</div></div>
         <span class="badge ${bc}">${bl}</span>
       </div>
-      ${c.status !== "paid" ? `<div class="deadline">⏳ ${days} dagar kvar att ansöka</div>` : ""}
+      ${c.status !== "paid" ? `<div class="deadline${days <= 14 ? " urgent" : ""}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></svg>${days} dagar kvar att ansöka</div>` : ""}
       <div class="actions">
         ${next ? `<button class="btn ghost" data-adv="${next[0]}">${next[1]}</button>` : ""}
         <button class="btn ghost" data-open-sl>SL-ansökan</button>

@@ -27,7 +27,12 @@ export async function evaluate({ home, dest, threshold = 20, cap = CAP_2026, sig
   const journeys = await trips(home.id, dest.id, 3, signal);
   if (!journeys.length) return { status: "unknown", journeys: [] };
 
-  const best = journeys[0]; // sorterad på tidigast estimerad ankomst
+  // Föredra resor som faktiskt startar vid hemhållplatsen. SL kan annars returnera
+  // resor från andra närliggande hållplatser (utan gångben dit), vilket blir missvisande.
+  const norm = (s) => (s || "").toLowerCase().trim();
+  const sameStop = (a, b) => { a = norm(a); b = norm(b); return !!a && !!b && (a === b || a.startsWith(b) || b.startsWith(a)); };
+  const fromHome = journeys.filter((j) => j.legs?.[0] && sameStop(j.legs[0].fromName, home.name));
+  const best = (fromHome.length ? fromHome : journeys)[0]; // tidigast anländande som startar hemifrån
   const now = Date.now();
 
   // Försening = estimerad ankomst vs tidtabellsenlig ankomst för samma resa.
@@ -38,12 +43,12 @@ export async function evaluate({ home, dest, threshold = 20, cap = CAP_2026, sig
     ? Math.max(0, (best.arrEstMs - best.arrPlannedMs) / 60000) : 0;
   const deltaMin = Math.round(realtimeDelayMin);
 
-  // Störningar på de linjer resan använder
-  const modes = [...new Set(journeys.flatMap((j) => j.lines.map((l) => l.mode)))];
+  // Störningar på de linjer den valda resan faktiskt använder
+  const modes = [...new Set(best.lines.map((l) => l.mode))];
   let matched = [];
   try {
     const devs = await deviations({ modes }, signal);
-    const lineKeys = new Set(journeys.flatMap((j) => j.lines.map((l) => `${l.mode}:${l.designation}`)));
+    const lineKeys = new Set(best.lines.map((l) => `${l.mode}:${l.designation}`));
     matched = devs
       .filter((d) => d.lines.some((l) => lineKeys.has(`${l.mode}:${l.designation}`)))
       .sort((a, b) => b.influence - a.influence || b.importance - a.importance);
@@ -78,7 +83,7 @@ export async function evaluate({ home, dest, threshold = 20, cap = CAP_2026, sig
     nextDepartureMs: best.depEstMs,
     arrEstMs: best.arrEstMs, arrPlannedMs: best.arrPlannedMs,
     monitored: best.monitored,
-    lines: evidence.lines, lineObjs,
+    lines: evidence.lines, lineObjs, legs: best.legs,
     taxi, matched, evidence, journeys,
   };
 }

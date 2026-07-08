@@ -37,6 +37,10 @@
             <input id="ob-home" type="text" autocomplete="off" placeholder="Sök hållplats…" />
             <ul id="ob-home-results" class="results" hidden></ul>
           </div>
+          <button class="btn ghost loc-btn" id="ob-loc" type="button">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Använd min plats
+          </button>
           <p id="ob-home-picked" class="picked" hidden></p>
         </div>
         <button class="btn primary block" data-next disabled>Fortsätt</button>
@@ -110,7 +114,7 @@
           <div class="home-from muted tiny">Hemifrån</div>
           <div id="home-stop" class="home-stop">—</div>
         </div>
-        <div class="updated muted tiny"><span id="updated">—</span> · nästa om <span id="countdown">–</span>s</div>
+        <div class="updated muted tiny">Uppdaterad <span id="updated">—</span></div>
       </div>
 
       <div id="net-banner" class="banner" hidden>
@@ -149,6 +153,10 @@
           <input id="set-home" type="text" autocomplete="off" placeholder="Sök hållplats…" />
           <ul id="set-home-results" class="results" hidden></ul>
         </div>
+        <button class="btn ghost loc-btn" id="set-loc" type="button">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          Använd min plats
+        </button>
         <div id="set-home-current" class="muted tiny"></div>
       </div>
 
@@ -170,6 +178,7 @@
       </div>
 
       <div class="setting-group">
+        <div class="setting-label">Notiser</div>
         <label class="toggle">
           <input type="checkbox" id="set-notify" />
           <span class="track" aria-hidden="true"></span>

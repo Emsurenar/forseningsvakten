@@ -16,10 +16,11 @@ Push-notiser och service worker kräver `localhost` eller HTTPS (secure context)
 
 ## Så funkar det
 
-1. **Onboarding** – ange hemhållplats (föreslås automatiskt från Östermalm), välj destinationsområden och aktiva tider.
+1. **Onboarding** – ange hemhållplats (sök, eller **"Använd min plats"** som via geolocation listar de närmaste hållplatserna av SL:s alla 6 500+), välj destinationsområden och aktiva tider.
 2. **Bevakning** – var 60:e sekund frågar appen SL:s reseplanerare hem → varje destination och jämför **beräknad framkomst mot tidtabell**.
 3. **Berättigande** – om förseningen är ≥ din gräns (standard 20 min) *och* den bekräftas av realtid eller en aktiv störning, blir destinationen "berättigad".
 4. **Notis + bevis** – du får en push, och ett bevispaket (rutt, tider, försening, störningstext, taxikalkyl) samlas för din SL-ansökan. Plånboken påminner om 3-månadersgränsen.
+5. **Resedetalj** – tryck på en destination för att se hela resan som en tidslinje (varje ben med SL:s linjefärg, riktning, tider, byten och gångsträckor).
 
 ### Algoritmen (engine.js)
 - **Försening `Δ`** = estimerad ankomst − tidtabellsenlig ankomst för den *tidigast anländande* resan. Måttet är **väntetids-fritt** (en resa jämförs mot sin egen tidtabell), så en normal väntan på nästa avgång aldrig felaktigt räknas som försening. Samma mått som SL:s "beräknad ankomst" vs "tidtabell".
