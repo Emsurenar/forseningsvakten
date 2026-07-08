@@ -150,18 +150,23 @@ async function startOnboarding() {
   $("#ob-loc").onclick = () => useMyLocation(homeCombo, $("#ob-loc"));
   attachSearch($("#ob-dest"), $("#ob-dest-results"), (s) => addObDest(s));
   renderSuggest();
-  // Personligt: föreslå hemhållplats baserat på Östermalm
-  try {
-    const near = await stopFinder("Stadion");
-    const pick = near.find((s) => (s.locality || "").includes("Stockholm")) || near[0];
-    if (pick && !ob.home) {
-      ob.home = pick;
-      $("#ob-home").value = pick.name;
-      $("#ob-home-picked").hidden = false;
-      $("#ob-home-picked").textContent = `${pick.name} · föreslagen från Östermalm — ändra om du vill`;
-      $('.ob-step[data-step="0"] [data-next]').disabled = false;
-    }
-  } catch {}
+  // Föreslå den närmaste hållplatsen baserat på din nuvarande plats
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      if (ob.home) return; // användaren har redan valt manuellt
+      try {
+        const near = await nearbyStops(pos.coords.latitude, pos.coords.longitude, 6);
+        if (near[0] && !ob.home) {
+          ob.home = near[0];
+          $("#ob-home").value = near[0].name;
+          $("#ob-home-picked").hidden = false;
+          $("#ob-home-picked").textContent = `Närmast dig: ${near[0].name} · ${near[0].locality} — ändra om du vill`;
+          $('.ob-step[data-step="0"] [data-next]').disabled = false;
+        }
+      } catch {}
+    }, () => { /* nekad/otillgänglig — sök manuellt eller använd knappen */ },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 });
+  }
 }
 function renderSuggest() {
   $("#ob-dest-suggest").innerHTML = SUGGEST

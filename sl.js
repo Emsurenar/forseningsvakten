@@ -166,9 +166,13 @@ export async function trips(originId, destId, n = 3, signal) {
       };
     })
     .filter(Boolean)
-    .filter((j) => j.arrEstMs) // måste ha ankomsttid
-    .sort((a, b) => a.arrEstMs - b.arrEstMs);
-  return journeys;
+    .filter((j) => j.arrEstMs); // måste ha ankomsttid
+  // SL:s API returnerar ibland en nyss avgången resa som första förslag. Släpp resor vars
+  // avgång redan passerat, annars visas en "nästa" resa som redan gått. Behåll alla som
+  // fallback om inget framtida finns kvar.
+  const now = Date.now();
+  const future = journeys.filter((j) => j.depEstMs == null || j.depEstMs >= now - 15000);
+  return (future.length ? future : journeys).sort((a, b) => a.arrEstMs - b.arrEstMs);
 }
 
 // --- Störningar, normaliserade ---
