@@ -57,11 +57,12 @@
 
 *{box-sizing:border-box;margin:0}
 [hidden]{display:none !important}
-html,body{height:100%}
+html,body{height:100%;background:var(--bg)}
 body{
   font-family:var(--font); background:var(--bg); color:var(--text);
   font-size:16px; line-height:1.5; letter-spacing:-.006em;
   -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  -webkit-text-size-adjust:100%; text-size-adjust:100%;
   overscroll-behavior-y:none; -webkit-tap-highlight-color:transparent;
 }
 h1{font-family:var(--font-display);font-size:29px;font-weight:700;letter-spacing:-.024em;line-height:1.12}
