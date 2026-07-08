@@ -1,5 +1,5 @@
 // Förseningsvakten — service worker (offline-skal + notisklick)
-const CACHE = "fv-v3";
+const CACHE = "fv-v4";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "sl.js", "engine.js", "manifest.webmanifest",
   "icons/icon.svg", "icons/icon-192.png", "icons/apple-touch-icon-180.png"];
 
@@ -9,21 +9,33 @@ self.addEventListener("install", (e) => {
     .then((c) => Promise.allSettled(SHELL.map((u) => c.add(u))))
     .then(() => self.skipWaiting()));
 });
+
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys()
+    .then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    .then(() => self.clients.claim()));
 });
+
+// Cache-first (stale-while-revalidate) för appskalet: CSS/JS/HTML laddas alltid, även på
+// en flakig mobiluppkoppling, och uppdateras i bakgrunden. Serverar ALDRIG HTML som svar på
+// en CSS/JS-begäran (det gav en osylad sida). SL:s API:er (annan origin) går direkt mot nätet.
 self.addEventListener("fetch", (e) => {
-  const url = new URL(e.request.url);
-  if (url.origin !== location.origin) return; // SL-API alltid direkt mot nätet
-  // network-first: färskt när online, cache-fallback offline
-  e.respondWith(
-    fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+  const req = e.request;
+  if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
+  e.respondWith(caches.open(CACHE).then(async (cache) => {
+    const cached = await cache.match(req);
+    const fresh = fetch(req).then((res) => {
+      if (res && res.ok) cache.put(req, res.clone());
       return res;
-    }).catch(() => caches.match(e.request).then((hit) => hit || caches.match("index.html")))
-  );
+    }).catch(() => null);
+    if (cached) { e.waitUntil(fresh); return cached; } // servera direkt, uppdatera i bakgrunden
+    const res = await fresh;
+    if (res) return res;
+    if (req.mode === "navigate") return cache.match("index.html");
+    return Response.error();
+  }));
 });
+
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   e.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
