@@ -29,7 +29,9 @@ export async function stopFinder(q, signal) {
 }
 
 // --- Närmaste hållplatser via geolocation ---
-const SITES_URL = "https://transport.integration.sl.se/v1/sites?expand=true";
+// Utan expand: lat/lon och namn finns ändå, och svaret är ~260 kB mindre —
+// expand lägger bara till stop areas som aldrig används här.
+const SITES_URL = "https://transport.integration.sl.se/v1/sites";
 let _sites = null;
 // gid = "9091001000" + id: konstrueras från det lilla id-fältet eftersom det riktiga
 // gid:et (9091001000001087) är > Number.MAX_SAFE_INTEGER och tappar precision i JSON.parse.
