@@ -1,5 +1,5 @@
 // Förseningsvakten — service worker (offline-skal + notisklick)
-const CACHE = "fv-v4";
+const CACHE = "fv-v5";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "sl.js", "engine.js", "manifest.webmanifest",
   "icons/icon.svg", "icons/icon-192.png", "icons/apple-touch-icon-180.png"];
 

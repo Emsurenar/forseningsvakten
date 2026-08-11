@@ -18,7 +18,7 @@ python3 -m http.server 4173
 
 ## Så fungerar det
 
-Du anger en hemhållplats – sök, eller låt appen föreslå den närmaste utifrån din plats – och de destinationer du bryr dig om. Var 60:e sekund frågar appen SL:s reseplanerare om resan hemifrån till varje destination och jämför beräknad ankomst mot tidtabell.
+Appen utgår alltid från din nuvarande position: inför varje kontroll hämtas platsen och närmaste hållplats blir resans start. En reservhållplats (väljs vid start) används när platsen inte kan hämtas. Var 60:e sekund frågar appen SL:s reseplanerare om resan därifrån till varje destination du valt och jämför beräknad ankomst mot tidtabell.
 
 Blir förseningen större än din gräns (20 minuter som standard), och bekräftas den av realtidsdata eller en aktiv störning, markeras destinationen som berättigad. Du får en notis och appen samlar ett underlag för ansökan: rutt, tider, försening, störningstext och en uppskattad taxikostnad. Plånboken håller reda på ärendena och påminner om tremånadersgränsen.
 

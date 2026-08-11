@@ -29,10 +29,10 @@
       <!-- Step 1: hemhållplats -->
       <section class="ob-step" data-step="0">
         <div class="ob-mark" aria-hidden="true"></div>
-        <h1>Var bor du?</h1>
-        <p class="muted">Vi bevakar avgångar från din hemhållplats. Tillåt plats så föreslår vi den närmaste.</p>
+        <h1>Varifrån åker du?</h1>
+        <p class="muted">Appen utgår alltid från din nuvarande plats — närmaste hållplats väljs automatiskt. Välj en reservhållplats som används när platsen inte kan hämtas.</p>
         <div class="field">
-          <label for="ob-home">Hemhållplats</label>
+          <label for="ob-home">Reservhållplats</label>
           <div class="combo">
             <input id="ob-home" type="text" autocomplete="off" placeholder="Sök hållplats…" />
             <ul id="ob-home-results" class="results" hidden></ul>
@@ -111,7 +111,7 @@
 
       <div class="home-meta">
         <div>
-          <div class="home-from muted tiny">Hemifrån</div>
+          <div id="origin-label" class="home-from muted tiny">Från din plats</div>
           <div id="home-stop" class="home-stop">—</div>
         </div>
         <div class="updated muted tiny">Uppdaterad <span id="updated">—</span></div>
@@ -148,7 +148,8 @@
       <header class="topbar"><div class="brand"><span class="brand-name">Inställningar</span></div></header>
 
       <div class="setting-group">
-        <div class="setting-label">Hemhållplats</div>
+        <div class="setting-label">Reservhållplats</div>
+        <p class="muted tiny">Utgångspunkten är alltid din nuvarande position. Reserven används bara när platsen inte kan hämtas.</p>
         <div class="combo">
           <input id="set-home" type="text" autocomplete="off" placeholder="Sök hållplats…" />
           <ul id="set-home-results" class="results" hidden></ul>

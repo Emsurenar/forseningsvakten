@@ -52,7 +52,10 @@ function toast(msg, action) {
 /* ---------- State ---------- */
 const KEY = "fv:state";
 const defaults = {
-  home: null, dests: [],
+  // home är numera reservhållplatsen — utgångspunkten är alltid nuvarande
+  // position (se resolveOrigin). lastOrigin minns senast upplösta hållplats
+  // så en omstart utan platsåtkomst inte gör appen blind.
+  home: null, lastOrigin: null, dests: [],
   settings: { from: "07:00", to: "23:00", notify: true, threshold: 20, worthwhile: false, theme: "system", cap: CAP_2026 },
   claims: [], configured: false,
 };
@@ -69,6 +72,39 @@ function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
 const results = new Map();      // destId -> evaluation
 const notifyStreak = new Map(); // destId -> consecutive eligible polls
 let lastPollAt = 0, nextPollAt = 0, polling = false;
+
+/* ---------- Utgångspunkt: alltid nuvarande position ---------- */
+// Resorna utgår från närmaste hållplats till där du ÄR, inte från en fast
+// hemhållplats. Positionen hämtas inför varje poll; hemhållplatsen finns kvar
+// som reserv när platsen inte kan hämtas (nekad, timeout, ingen täckning).
+let currentOrigin = null;
+
+const getPosition = () => new Promise((resolve, reject) => {
+  if (!navigator.geolocation) return reject(new Error("unsupported"));
+  // Grov precision räcker: hållplatser ligger hundratals meter isär, och
+  // wifi-position är både snabbare och snällare mot batteriet än GPS.
+  navigator.geolocation.getCurrentPosition(resolve, reject,
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 });
+});
+
+async function resolveOrigin() {
+  try {
+    const pos = await getPosition();
+    const [near] = await nearbyStops(pos.coords.latitude, pos.coords.longitude, 1);
+    if (near) {
+      // Byter utgångspunkten hållplats är gamla svar svar på fel fråga — en
+      // "berättigad" från förra hållplatsen får inte stå kvar som om den
+      // gällde härifrån. Pollen som just ringt hit fyller på direkt igen.
+      if (currentOrigin?.id !== near.id) { results.clear(); notifyStreak.clear(); }
+      currentOrigin = near;
+      state.lastOrigin = near; save();
+      return near;
+    }
+  } catch { /* nekad, timeout eller offline — reserven nedan */ }
+  return currentOrigin || state.lastOrigin || state.home;
+}
+
+const originNow = () => currentOrigin || state.lastOrigin || state.home;
 
 /* ---------- Theme ---------- */
 function applyTheme() {
@@ -99,6 +135,9 @@ function attachSearch(input, list, onPick) {
     catch (e) { if (e.name !== "AbortError") { items = []; close(); } }
   }, 220);
   input.addEventListener("input", run);
+  // Klick utanför lämnade listan hängande — mousedown på en träff hinner före
+  // (preventDefault behåller fokus), så fördröjningen stör inte valet.
+  input.addEventListener("blur", () => setTimeout(close, 150));
   input.addEventListener("keydown", (e) => {
     if (list.hidden) return;
     if (e.key === "ArrowDown") { active = Math.min(active + 1, items.length - 1); render(); e.preventDefault(); }
@@ -222,9 +261,18 @@ function bootApp() {
 }
 
 function renderHome() {
-  $("#home-stop").textContent = state.home?.name || "—";
+  renderOrigin();
   renderDestCards();
   renderHero();
+}
+
+// Etiketten skiljer på levande position, senast kända och reserv — "Från din
+// plats" som ljuger är värre än ett ärligt "Senast kända plats".
+function renderOrigin() {
+  const o = originNow();
+  $("#home-stop").textContent = o?.name || "—";
+  $("#origin-label").textContent = currentOrigin ? "Från din plats"
+    : state.lastOrigin ? "Senast kända plats" : "Reservhållplats";
 }
 
 // Tidigast anländande resan som ännu inte avgått, vald mot AKTUELL tid (inte polltid).
@@ -294,6 +342,10 @@ function renderDestCards() {
     if (idx < 0) return;
     const [removed] = state.dests.splice(idx, 1);
     const prevRes = results.get(id); results.delete(id);
+    // Städa notis-spärrarna: läggs destinationen till igen senare ska den
+    // bedömas som ny, inte ärva en gammal 25-minutersspärr.
+    notifyStreak.delete(id);
+    localStorage.removeItem(`fv:notified:${id}`);
     save(); renderDestCards(); renderHero();
     toast(`${removed.name} borttagen`, { label: "Ångra", fn: () => {
       state.dests.splice(Math.min(idx, state.dests.length), 0, removed);
@@ -351,19 +403,24 @@ function renderHero() {
 /* ---------- Polling ---------- */
 async function poll(force = false) {
   if (polling) return;
-  if (!state.home || !state.dests.length) { renderHero(); return; }
+  if (!state.dests.length) { renderHero(); return; }
   polling = true;
   $("#refresh")?.classList.add("spin");
+  // Positionen hämtas inför varje poll, så utgångspunkten följer med dig.
+  const origin = await resolveOrigin();
+  renderOrigin();
   const { threshold, cap } = state.settings;
   let ok = 0;
-  await Promise.allSettled(state.dests.map(async (d) => {
-    try {
-      const res = await evaluate({ home: state.home, dest: d, threshold, cap });
-      results.set(d.id, res);
-      handleNotify(d, res);
-      ok++;
-    } catch (e) { /* behåll förra resultatet */ }
-  }));
+  if (origin) {
+    await Promise.allSettled(state.dests.map(async (d) => {
+      try {
+        const res = await evaluate({ home: origin, dest: d, threshold, cap });
+        results.set(d.id, res);
+        handleNotify(d, res);
+        ok++;
+      } catch (e) { /* behåll förra resultatet */ }
+    }));
+  }
   renderDestCards();
   renderHero();
   $("#net-banner").hidden = !(navigator.onLine === false || (ok === 0 && state.dests.length > 0));
@@ -422,7 +479,8 @@ async function fireNotification(title, body, tag = "fv") {
 
 /* ---------- Taxi ---------- */
 function bookTaxi(d) {
-  const o = state.home?.coord, t = d.coord;
+  // Taxin ska hämta där du är, inte vid en gammal hemhållplats.
+  const o = originNow()?.coord, t = d.coord;
   const url = o && t
     ? `https://www.google.com/maps/dir/?api=1&origin=${o.lat},${o.lon}&destination=${t.lat},${t.lon}&travelmode=driving`
     : `https://www.google.com/maps/search/?api=1&query=taxi`;
@@ -556,7 +614,7 @@ function renderWallet() {
 
 /* ================= SETTINGS ================= */
 function renderSettings() {
-  $("#set-home-current").textContent = state.home ? `Nu: ${state.home.name}${state.home.locality ? " · " + state.home.locality : ""}` : "";
+  $("#set-home-current").textContent = state.home ? `Reserv: ${state.home.name}${state.home.locality ? " · " + state.home.locality : ""}` : "";
   $("#set-threshold").value = state.settings.threshold;
   $("#set-threshold-val").textContent = state.settings.threshold + " min";
   $("#set-from").value = state.settings.from; $("#set-to").value = state.settings.to;
