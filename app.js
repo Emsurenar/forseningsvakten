@@ -547,7 +547,7 @@ function openClaimSheet(d, res) {
       ${ev.deviation ? `<div class="row"><span class="k">Störning</span><span class="v small">${esc(ev.deviation.header)}</span></div>` : ""}
       <div class="row"><span class="k">Taxi (uppskattat)</span><span class="v">${kr(ev.taxi.fare)}</span></div>
     </div>
-    <div class="sheet-note">Du måste ha giltig SL-biljett och faktiskt genomföra resan. Spara taxikvittot i original. Ansök hos SL inom 3 månader.</div>
+    <div class="sheet-note">Bifoga biljett eller SL-kortnummer — utan biljett dras priset för en enkelbiljett av. Spara taxikvittot i original. Ansök med BankID hos SL inom 3 månader.</div>
     <div class="sheet-actions">
       <button class="btn primary" data-save ${already ? "disabled" : ""}>${already ? "Redan sparat i plånboken" : "Spara i plånboken"}</button>
       <button class="btn ghost" data-sl>Öppna SL:s ansökan</button>

@@ -1,6 +1,6 @@
 # Förseningsvakten
 
-Förseningsvakten säger till när en SL-försening ger dig rätt till en taxiresa som SL betalar. Enligt SL:s villkor får du ta taxi eller egen bil om du riskerar att bli mer än 20 minuter försenad till din slutdestination, och sedan få ersättning i efterhand (2,5 % av prisbasbeloppet, vilket är 1 480 kr under 2026).
+Förseningsvakten säger till när en SL-försening ger dig rätt till en taxiresa som SL betalar. Enligt SL:s villkor kan du få ersättning med upp till 1 480 kr (2026) för resa med taxi, egen bil eller annat trafikbolag som kör motsvarande sträcka, om du riskerar att bli mer än 20 minuter försenad. Egen bil ersätts med 25 kr per mil, och samåkning höjer inte beloppet.
 
 Appen kör helt i webbläsaren. Ingen server och inga konton – all data sparas lokalt på enheten.
 
@@ -54,4 +54,4 @@ Rena statiska filer som kan ligga på valfri host med HTTPS. Höj `CACHE`-versio
 
 ## Juridik
 
-Verktyget drivs inte av SL, och ersättningen betalas ut av SL enligt deras villkor. Du måste ha giltig biljett och faktiskt genomföra resan. Spara originalkvittot och ansök inom tre månader, direkt hos SL – ersättning via mellanhänder har nekats.
+Verktyget drivs inte av SL, och ersättningen betalas ut av SL enligt deras villkor. Giltig biljett är inget krav, men du måste kunna visa att du tänkte resa med SL — biljett eller SL-kortnummer bifogas ansökan, och utan biljett dras priset för en enkelbiljett av från ersättningen. Styrk utläggen med kvitton i original och ansök med BankID direkt hos SL inom tre månader – ersättning via mellanhänder har nekats.
