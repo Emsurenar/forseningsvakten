@@ -4,7 +4,7 @@ Förseningsvakten säger till när en SL-försening ger dig rätt till en taxire
 
 Appen kör helt i webbläsaren. Ingen server och inga konton – all data sparas lokalt på enheten.
 
-Live: https://emsurenar.github.io/forseningsvakten/
+Live: https://emsurenar.github.io/SL-vakt/
 
 ## Kör lokalt
 
